@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8">
+<title>window-arranger → display-census</title>
+<body style="background:#0a0e14;color:#cbd5e1;font-family:ui-monospace,monospace;display:grid;place-items:center;min-height:95vh">
+<div style="max-width:32rem;text-align:center;line-height:1.9">
+  <div style="font-size:2.2rem">🎭 → 👁️</div>
+  <p>UI ย้ายบ้านแล้ว — เว็บเดียวคือ <b>display-census</b><br>(กำลังพาไป…)</p>
+  <p><a style="color:#8fd3ff" href="http://localhost:8899/">localhost:8899 (local, เร็ว)</a> ·
+     <a style="color:#8fd3ff" href="/legacy">this server's UI</a></p>
+  <p style="color:#64748b;font-size:.85rem">หน้าเดิมยังอยู่ที่ <a style="color:#94a3b8" href="/legacy">/legacy</a> (break-glass ตอนเน็ตล่ม) · API :8900 ทำงานปกติ</p>
+</div>
+<script>
+  // prefer the local census view when it answers; fall back to the public URL.
+  // no-cors: an opaque response still proves the server is up (CORS headers
+  // aren't needed just to detect reachability), network error = not running.
+  fetch("http://localhost:8899/api/state",{mode:"no-cors",signal:AbortSignal.timeout(1200)})
+    .then(()=>location.replace("http://localhost:8899/"))
+    .catch(()=>location.replace("/legacy"));
+</script></body>

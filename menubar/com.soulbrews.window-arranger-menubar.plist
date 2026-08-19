@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.soulbrews.window-arranger-menubar</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/Window Arranger.app/Contents/MacOS/WindowArrangerMenuBar</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Quit must stay quit (exit 0), a crash must come back (exit != 0) —
+         the merged app resolves the old KeepAlive-vs-Quit split this way. -->
+    <key>KeepAlive</key>
+    <dict><key>SuccessfulExit</key><false/></dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/window-arranger-menubar.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/window-arranger-menubar.log</string>
+</dict>
+</plist>

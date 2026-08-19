@@ -1,0 +1,8 @@
+.envrc
+.env
+.env.*
+node_modules/
+.DS_Store
+*.log
+scripts/bin/
+ψ/learn/**/origin

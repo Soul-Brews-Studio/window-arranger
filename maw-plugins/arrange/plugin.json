@@ -1,0 +1,17 @@
+{
+  "name": "arrange",
+  "version": "0.1.0",
+  "entry": "./src/index.ts",
+  "sdk": "^1.0.0",
+  "target": "js",
+  "description": "window-arranger's yabai layout tool — dedup duplicate tmux mirror windows, park apps to the main Space, spread terminals so no Space holds more than N, and tile each into columns. `maw arrange status|plan|dedup|spread|organize [--max N]`.",
+  "author": "window-arranger",
+  "cli": {
+    "command": "arrange",
+    "help": "maw arrange <status|plan|dedup|close-empty|spread|organize|reserve|unreserve|reserved> [--max N] [--dry-run] — status: terminals per space + apps + reserved. plan: dry-run the moves. dedup: close duplicate tmux mirror windows (keep 1/session). close-empty: close idle bare-shell terminals (no oracle running). spread: park apps->space 1 + spread terminals <=N/space. organize: dedup + close-empty + spread + tile columns (the full 'make it pretty'). reserve <space> [label] / unreserve <space> / reserved: mark a space hands-off for a named owner (e.g. reserve 2 nh). --dry-run previews dedup/close-empty. N defaults to 3."
+  },
+  "capabilities": ["proc:exec:yabai", "proc:exec:tmux", "proc:exec:wezterm"],
+  "weight": 0,
+  "license": "MIT",
+  "schemaVersion": 1
+}

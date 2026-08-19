@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>window-arranger</title>
+  <!-- Local-only dev tool: React + Tailwind pulled from CDN (no build step).
+       Needs internet; that's fine for a local utility that already talks to yabai. -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style> html, body { background: #0a0e14; } </style>
+</head>
+<body class="bg-[#0a0e14] text-slate-200 font-mono">
+  <div id="root" class="p-6 text-slate-500">loading…</div>
+  <script>
+    const html = htm.bind(React.createElement);
+    const { useState, useEffect, useCallback } = React;
+
+    const jget = (url) => fetch(url).then((r) => r.json());
+    const jpost = (url, body) => fetch(url, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    }).then((r) => r.json());
+
+    const MODES = [
+      { v: "spiral", label: "Fibonacci spiral" },
+      { v: "flip", label: "Flip (curls down)" },
+      { v: "flipup", label: "Flip ↑ (curls up)" },
+      { v: "grid", label: "Grid" },
+      { v: "columns", label: "Columns (one row)" },
+      { v: "rows", label: "Rows (one column)" },
+    ];
+    // Default to "active window biggest on the right": flip + active-first, so
+    // every arrange puts the oracle you're typing in as the big right tile.
+    const DEFAULT_UI = { mode: "flip", activeFirst: true, view: "current" };
+
+    function Badge({ children, kind }) {
+      const cls = {
+        float: "bg-[#2a2f3a] text-slate-300",
+        bsp: "bg-[#e94560] text-white",
+        stack: "bg-[#53354a] text-white",
+        visible: "bg-[#173a2b] text-[#a6e3a1]",
+        focus: "bg-[#16537e] text-white",
+        main: "bg-[#3a2f14] text-[#e3b23c]",
+      }[kind] || "bg-[#2a2f3a] text-slate-300";
+      return html`<span class=${"px-2 py-0.5 rounded text-[11px] " + cls}>${children}</span>`;
+    }
+
+    // A confirm popup anchored AT the mouse — its Confirm button lands right
+    // under the cursor, instead of the native confirm() dialog that jumps to the
+    // middle of the screen.
+    function ConfirmPopover({ state, onClose }) {
+      const left = Math.min(state.x - 12, window.innerWidth - 230);
+      const top = Math.min(state.y - 12, window.innerHeight - 110);
+      return html`
+        <div class="fixed inset-0 z-40" onClick=${() => onClose(false)}>
+          <div style=${{ position: "fixed", left, top, width: 220 }}
+            class="z-50 bg-[#161b24] border border-[#333b47] rounded-lg shadow-2xl p-3"
+            onClick=${(e) => e.stopPropagation()}>
+            <div class="flex gap-2 mb-2">
+              <button onClick=${() => onClose(true)}
+                class="px-3 py-1.5 rounded text-xs bg-[#16537e] hover:bg-[#1d6796] text-white">Confirm</button>
+              <button onClick=${() => onClose(false)}
+                class="px-3 py-1.5 rounded text-xs bg-[#1a1f28] border border-[#333b47] text-slate-300">Cancel</button>
+            </div>
+            <div class="text-[11px] text-slate-400 leading-snug">${state.text}</div>
+          </div>
+        </div>`;
+    }
+
+    function Btn({ children, onClick, variant, disabled }) {
+      const base = "px-3 py-1.5 rounded text-xs border transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
+      const v = variant === "primary"
+        ? "bg-[#16537e] hover:bg-[#1d6796] border-[#2b7fb8] text-white"
+        : "bg-[#1a1f28] hover:bg-[#242b36] border-[#333b47] text-slate-200";
+      return html`<button disabled=${disabled} onClick=${onClick} class=${base + " " + v}>${children}</button>`;
+    }
+
+    // Controlled: mode / activeFirst / view live in App's ui map (keyed by space
+    // index) so they survive the 2s poll re-render instead of resetting.
+    function SpaceRow({ space, tick, ui, setUi }) {
+      const { mode, activeFirst, view } = ui;
+      const [busy, setBusy] = useState(false);
+
+      // 'current' view busts cache each tick (stays live); 'proposed' view only
+      // changes when mode/activeFirst change — no per-tick reload, no flicker.
+      const src = view === "current"
+        ? `/api/current/${space.index}?t=${tick}`
+        : `/api/preview/${space.index}?mode=${mode}&active=${activeFirst ? 1 : 0}`;
+
+      const apply = async () => {
+        setBusy(true);
+        await jpost(`/api/space/${space.index}/apply`, { mode, activeFirst });
+        setBusy(false); setUi({ view: "current" });
+      };
+      const revert = async () => {
+        setBusy(true);
+        await jpost(`/api/space/${space.index}/layout`, { layout: "float" });
+        setBusy(false); setUi({ view: "current" });
+      };
+
+      return html`
+        <div class="border-t border-[#151b24] py-2.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-slate-300 w-16">space ${space.index}</span>
+            <${Badge} kind=${space.type}>${space.type}<//>
+            ${space["is-visible"] && html`<${Badge} kind="visible">visible<//>`}
+            <span class="text-slate-500 text-xs w-24">${space.windows.length} windows</span>
+            <select value=${mode} onChange=${(e) => setUi({ mode: e.target.value, view: "proposed" })}
+              class="bg-[#1a1f28] border border-[#333b47] rounded px-2 py-1 text-xs text-slate-200">
+              ${MODES.map((m) => html`<option key=${m.v} value=${m.v}>${m.label}</option>`)}
+            </select>
+            <label class="flex items-center gap-1 text-xs ${activeFirst ? "text-[#e3b23c]" : "text-slate-400"} cursor-pointer select-none"
+              title="Reorder so the window you last typed in gets the layout's biggest slot">
+              <input type="checkbox" checked=${activeFirst}
+                onChange=${(e) => setUi({ activeFirst: e.target.checked, view: "proposed" })} />
+              ↻ active-first
+            </label>
+            <${Btn} onClick=${() => setUi({ view: "current" })}>Current<//>
+            <${Btn} onClick=${() => setUi({ view: "proposed" })}>Preview<//>
+            <${Btn} variant="primary" disabled=${busy} onClick=${apply}>Apply<//>
+            <${Btn} disabled=${busy} onClick=${revert}>Revert<//>
+          </div>
+          ${space.windows.length ? html`
+            <div class="mt-2">
+              <div class="text-[11px] mb-1 ${view === "current" ? "text-[#a6e3a1]" : "text-[#8fd3ff]"}">
+                ${view === "current" ? "● live current arrangement" : "○ proposed: " + mode + (activeFirst ? " + active-first" : "")}
+              </div>
+              <img src=${src} alt=${"space " + space.index}
+                class="block mx-auto max-w-full max-h-[70vh] rounded border border-[#1e2530]" />
+            </div>` : null}
+        </div>`;
+    }
+
+    // Physical arrangement mini-map — the same picture as macOS System Settings
+    // "Arrange Displays". Exact by construction: yabai display frames ARE the
+    // global point coordinates macOS arranges displays in, so scaling the
+    // bounding box preserves every offset (including vertical drops) and every
+    // relative size. Click a display → scroll to its card below.
+    function ArrangeMap({ displays, posOf }) {
+      if (displays.length < 2) return null;
+      const minX = Math.min(...displays.map((d) => d.frame.x));
+      const minY = Math.min(...displays.map((d) => d.frame.y));
+      const maxX = Math.max(...displays.map((d) => d.frame.x + d.frame.w));
+      const maxY = Math.max(...displays.map((d) => d.frame.y + d.frame.h));
+      const W = maxX - minX, H = maxY - minY;
+      const scale = Math.min(560 / W, 150 / H);
+      const pad = 8;
+      return html`
+        <svg width=${W * scale + pad * 2} height=${H * scale + pad * 2}
+          class="block" aria-label="physical display arrangement">
+          ${displays.map((d) => {
+            const x = (d.frame.x - minX) * scale + pad, y = (d.frame.y - minY) * scale + pad;
+            const w = d.frame.w * scale, h = d.frame.h * scale;
+            const isMain = d.frame.x === 0 && d.frame.y === 0;
+            return html`
+              <g key=${d.index} class="cursor-pointer"
+                onClick=${() => document.getElementById("display-" + d.index)?.scrollIntoView({ behavior: "smooth" })}>
+                <rect x=${x} y=${y} width=${w} height=${h} rx="4"
+                  fill=${d["has-focus"] ? "#16537e" : "#1a2230"}
+                  stroke=${isMain ? "#e3b23c" : "#3a4556"} stroke-width=${isMain ? 2 : 1} />
+                <text x=${x + w / 2} y=${y + h / 2 - 5} text-anchor="middle"
+                  fill="#a6e3a1" font-size="11" font-weight="bold">${posOf(d)}</text>
+                <text x=${x + w / 2} y=${y + h / 2 + 9} text-anchor="middle"
+                  fill="#64748b" font-size="9">${(d.name || "").slice(0, 16)}</text>
+              </g>`;
+          })}
+        </svg>`;
+    }
+
+    function DisplayCard({ display, spaces, pos, tick, uiFor, setUiFor }) {
+      const mine = spaces.filter((s) => s.display === display.index).sort((a, b) => a.index - b.index);
+      const isMain = display.frame.x === 0 && display.frame.y === 0;
+      const isPortrait = display.frame.h > display.frame.w;
+      return html`
+        <div id=${"display-" + display.index} class="bg-[#0f141c] border border-[#1e2530] rounded-xl p-4 mb-4 break-inside-avoid">
+          <div class="flex flex-wrap items-center gap-2 mb-1">
+            <span class="text-slate-600 text-xs font-bold">${pos}</span>
+            <h2 class="text-[#a6e3a1] font-bold">${display.name || "Display " + pos}</h2>
+            <span class="text-slate-500 text-xs">${Math.round(display.frame.w)}×${Math.round(display.frame.h)}</span>
+            ${display["has-focus"] && html`<${Badge} kind="focus">focused<//>`}
+            ${isMain && html`<${Badge} kind="main">main<//>`}
+            ${isPortrait && html`<${Badge} kind="stack">portrait<//>`}
+          </div>
+          ${mine.length
+            ? mine.map((s) => html`<${SpaceRow} key=${s.index} space=${s} tick=${tick}
+                ui=${uiFor(s.index)} setUi=${(patch) => setUiFor(s.index, patch)} />`)
+            : html`<div class="text-slate-600 text-xs py-2">no spaces</div>`}
+        </div>`;
+    }
+
+    function App() {
+      const [data, setData] = useState(null);
+      const [pins, setPins] = useState(null);
+      const [busy, setBusy] = useState(null);
+      const [confirmState, setConfirmState] = useState(null);
+      const [tick, setTick] = useState(0);
+      // Per-space UI (mode / activeFirst / current-vs-proposed) lives here so it
+      // persists across the poll re-render instead of resetting every 2s.
+      const [ui, setUi] = useState({});
+      const uiFor = (idx) => ui[idx] || DEFAULT_UI;
+      const setUiFor = (idx, patch) => setUi((u) => ({ ...u, [idx]: { ...(u[idx] || DEFAULT_UI), ...patch } }));
+      const load = useCallback(async () => {
+        const [s, p] = await Promise.all([jget("/api/state"), jget("/api/pins")]);
+        setData(s); setPins(p);
+      }, []);
+      useEffect(() => { load(); }, [load]);
+      // Reads are served from the engine's cache (zero yabai forks), so we can
+      // poll cheaply — the UI stays live with no manual Refresh. tick nudges each
+      // card to re-pull its current-arrangement SVG.
+      useEffect(() => {
+        const id = setInterval(() => { load(); setTick((t) => t + 1); }, 2000);
+        return () => clearInterval(id);
+      }, [load]);
+
+      const askConfirm = (e, text) => new Promise((resolve) =>
+        setConfirmState({ x: e.clientX, y: e.clientY, text, resolve }));
+      const closeConfirm = (v) => { confirmState?.resolve(v); setConfirmState(null); };
+
+      const gather = async (e) => {
+        if (!(await askConfirm(e, "Pull ALL windows from every display onto the main display? You can then Apply a layout to sort them."))) return;
+        setBusy("Gathering…");
+        const r = await jpost("/api/gather-to-main");
+        setBusy(null);
+        load();
+      };
+
+      const refreshNames = async () => {
+        setBusy("Detecting monitors…");
+        await jpost("/api/refresh-displays");
+        setBusy(null);
+        load();
+      };
+
+      // 📸 Snapshot the current arrangement (each oracle → its space) to the
+      // profile — arrange by hand, then save. Moves nothing. Backs up the old one.
+      const snapshot = async () => {
+        setBusy("Snapshotting…");
+        const r = await jpost("/api/snapshot-profile");
+        setBusy(r?.saved != null ? `📸 Saved ${r.saved} oracles → profile` : "snapshot failed");
+        setTimeout(() => setBusy(null), 2500);
+      };
+
+      // 📌 Pins on/off — enabling re-arms the 10s tracker (windows may snap back
+      // within seconds), so that direction asks first; disabling is instant.
+      const togglePins = async (e) => {
+        if (!pins?.enabled) {
+          const ok = await askConfirm(e, `Re-arm ${pins?.rules ?? 0} pin rule(s)? Pinned oracles will snap back to their saved targets within ~10s.`);
+          if (!ok) return;
+        }
+        const r = await jpost("/api/pins/toggle");
+        setPins(r);
+      };
+
+      // ♻️ Restore — move every oracle back to its saved space (moves windows).
+      const restore = async (e) => {
+        if (!(await askConfirm(e, "Move every oracle back to its saved space (from the last 📸 snapshot)?"))) return;
+        setBusy("Restoring…");
+        const r = await jpost("/api/arrange-profile");
+        setBusy(r?.ok ? `♻️ Restored ${r.moved}/${r.matched}` : (r?.error || "no profile — snapshot first"));
+        setTimeout(() => setBusy(null), 3000);
+        load();
+      };
+
+      if (!data) return html`<div class="text-slate-500">loading…</div>`;
+      // Single column, one display per ROW (easier to read than a cramped 3-col
+      // masonry). Main display (origin 0,0) is row 1 on top; the rest follow
+      // left→right by physical position (frame.x), so row 2 = leftmost display.
+      // Full-width rows mean a tall portrait monitor no longer distorts anything.
+      const byX = [...data.displays].sort((a, b) => a.frame.x - b.frame.x);
+      const mainIdx = byX.findIndex((d) => d.frame.x === 0 && d.frame.y === 0);
+      const ordered = mainIdx >= 0 ? [byX[mainIdx], ...byX.filter((_, i) => i !== mainIdx)] : byX;
+      const posOf = (d) => ordered.indexOf(d) + 1;
+
+      return html`
+        <div class="min-h-screen">
+          <header class="sticky top-0 z-10 bg-[#0a0e14f2] border-b border-[#1e2530] px-4 lg:px-6 py-3 flex flex-wrap items-center gap-3">
+            <h1 class="text-[#8fd3ff] font-bold text-lg">🎭 window-arranger</h1>
+            <span class="text-slate-500 text-xs">local-only · m5</span>
+            <div class="ml-auto flex items-center gap-2">
+              ${busy && html`<span class="text-[#e3b23c] text-xs">${busy}</span>`}
+              ${pins && html`
+                <button onClick=${togglePins}
+                  title=${pins.enabled
+                    ? `Pin tracker is ON (${pins.rules} rules, enforced every 10s) — click to disarm (rules kept in pins.json.off)`
+                    : `Pin tracker is OFF — click to re-arm ${pins.rules} saved rule(s)`}
+                  class=${"px-3 py-1.5 rounded text-xs border transition-colors " + (pins.enabled
+                    ? "bg-[#3a2f14] border-[#e3b23c] text-[#e3b23c] hover:bg-[#4a3d1a]"
+                    : "bg-[#1a1f28] border-[#333b47] text-slate-500 hover:bg-[#242b36]")}>
+                  📌 Pins · Current State: ${pins.enabled ? "ON" : "OFF"}
+                </button>`}
+              <${Btn} onClick=${snapshot}>📸 Snapshot<//>
+              <${Btn} onClick=${restore}>♻️ Restore<//>
+              <${Btn} variant="primary" onClick=${gather}>Gather all to Main<//>
+              <${Btn} onClick=${refreshNames}>↻ Names<//>
+              <${Btn} onClick=${load}>Refresh<//>
+            </div>
+          </header>
+          <div class="px-4 lg:px-6 pt-4 flex justify-center">
+            <${ArrangeMap} displays=${ordered} posOf=${posOf} />
+          </div>
+          <main class="p-4 lg:p-6 flex flex-col gap-4">
+            ${ordered.map((d) => html`<${DisplayCard} key=${d.index} pos=${posOf(d)} display=${d} spaces=${data.spaces} tick=${tick} uiFor=${uiFor} setUiFor=${setUiFor} />`)}
+          </main>
+          ${confirmState && html`<${ConfirmPopover} state=${confirmState} onClose=${closeConfirm} />`}
+        </div>`;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
+  </script>
+</body>
+</html>

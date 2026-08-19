@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.soulbrews.window-arranger-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <!-- TEMPLATE: replace __INSTALL_DIR__ before loading. Pointing a KeepAlive
+         service at a .build/debug/ path inside a checkout is not an installable
+         artifact; build with `swift build -c release` and install the binary. -->
+        <string>__INSTALL_DIR__/WindowArrangerServer</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- KeepAlive: the server owns :8900 (census reads it at 1 Hz) — restart on
+         crash, like pm2 did for the Bun predecessor. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/window-arranger-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/window-arranger-server.log</string>
+</dict>
+</plist>

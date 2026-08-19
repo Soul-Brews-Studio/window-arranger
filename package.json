@@ -1,0 +1,18 @@
+{
+  "name": "window-arranger",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run server.ts",
+    "build:tools": "mkdir -p scripts/bin && swiftc -O scripts/cursor.swift -o scripts/bin/cursor && swiftc -O scripts/idle.swift -o scripts/bin/idle"
+  },
+  "dependencies": {
+    "elysia": "^1.4.29",
+    "@elysia/static": "^1.4.11"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Soul-Brews-Studio/window-arranger"
+  }
+}

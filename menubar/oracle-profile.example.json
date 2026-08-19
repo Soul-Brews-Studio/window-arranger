@@ -1,0 +1,19 @@
+[
+  {
+    "match": "editor",
+    "space": 4
+  },
+  {
+    "match": "browser",
+    "display": 3
+  },
+  {
+    "match": "chat",
+    "label": "chat-home"
+  },
+  {
+    "match": "terminal",
+    "display": 4,
+    "grid": "1:1:0:0:1:1"
+  }
+]

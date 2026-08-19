@@ -1,0 +1,60 @@
+#!/usr/bin/env bun
+// fake-yabai — the conformance suite's stand-in for the real yabai binary.
+// Every implementation (TS/Swift/Rust) is pointed here via YABAI_BIN, so all
+// of them see the exact same world and their outputs become byte-comparable.
+//
+//   queries  -> canned JSON from fixture.json (deterministic, never mutates)
+//   -m config <key> -> canned value from fixture.config
+//   writes   -> append the argv (JSON line) to $FAKE_YABAI_LOG, exit 0
+//
+// Stateless on purpose: a post-write refresh re-reads the same fixture in
+// every implementation, which is all parity testing needs.
+import { readFileSync, appendFileSync } from "node:fs";
+
+const fixture = JSON.parse(readFileSync(new URL("./fixture.json", import.meta.url), "utf8"));
+const args = process.argv.slice(2);
+const out = (v: unknown) => process.stdout.write(JSON.stringify(v) + "\n");
+
+if (args[0] === "-m" && args[1] === "query") {
+  const what = args[2];
+  const sel = (flag: string): string | undefined => {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  };
+  if (what === "--displays") {
+    const d = sel("--display");
+    out(d ? fixture.displays.find((x: any) => x.index === Number(d)) : fixture.displays);
+  } else if (what === "--spaces") {
+    const s = sel("--space");
+    out(s ? fixture.spaces.find((x: any) => x.index === Number(s)) : fixture.spaces);
+  } else if (what === "--windows") {
+    const w = sel("--window");
+    const sp = sel("--space");
+    const disp = sel("--display");
+    if (w) out(fixture.windows.find((x: any) => x.id === Number(w)));
+    else if (sp) out(fixture.windows.filter((x: any) => x.space === Number(sp)));
+    else if (disp) out(fixture.windows.filter((x: any) => x.display === Number(disp)));
+    else out(fixture.windows);
+  } else {
+    process.stderr.write(`fake-yabai: unknown query ${what}\n`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+if (args[0] === "-m" && args[1] === "config") {
+  // both `-m config <key>` and `-m config --space N <key>`
+  const key = args[args.length - 1];
+  const val = fixture.config[key];
+  if (val === undefined) {
+    process.stderr.write(`fake-yabai: unknown config key ${key}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(String(val) + "\n");
+  process.exit(0);
+}
+
+// Everything else is a write — record it for cross-implementation diffing.
+const log = process.env.FAKE_YABAI_LOG;
+if (log) appendFileSync(log, JSON.stringify(args) + "\n");
+process.exit(0);
